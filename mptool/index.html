@@ -124,6 +124,7 @@ input:focus-visible, button:focus-visible, summary:focus-visible {
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 details summary { cursor: pointer; font-weight: 700; font-size: .95rem; color: var(--accent); }
 details[open] summary { margin-bottom: 12px; }
+details.card { display: block; }
 .hint { font-size: .78rem; color: var(--muted); margin: 0; }
 .result {
   background: var(--accent);
@@ -221,10 +222,10 @@ tr.last td { font-weight: 700; }
 
   <div id="out"></div>
 
-  <section class="card" aria-label="計算の前提">
-    <h2>計算の前提</h2>
+  <details class="card" id="premise">
+    <summary>計算の前提を見る</summary>
     <ul class="rules" id="rules"></ul>
-  </section>
+  </details>
 </main>
 
 <script>
