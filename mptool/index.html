@@ -176,27 +176,26 @@ tr.last td { font-weight: 700; }
     <label class="main-input" for="hold">いまの所持ポイント
       <input type="number" id="hold" inputmode="numeric" min="0" step="1" value="1730">
     </label>
-    <label for="got">すでに受け取った累計（まだなら0）
-      <input type="number" id="got" inputmode="numeric" min="0" step="1" value="0">
-    </label>
     <div>
-      <p class="group-label" id="preset-label">受け取りパターン</p>
-      <div class="presets" id="preset-group" role="group" aria-labelledby="preset-label">
-        <button type="button" id="preset-a" data-a="820" data-b="600" data-f="0" data-cap="3200">820 / 600</button>
-        <button type="button" id="preset-b" data-a="820" data-b="600" data-f="300" data-cap="3200">820 / 600（初回300）</button>
-        <button type="button" id="preset-c" data-a="300" data-b="120" data-f="0" data-cap="1600">300 / 120</button>
-      </div>
-    </div>
-    <div class="presets" id="first-row" hidden>
-      <button type="button" id="usedFirst" aria-pressed="false">初回分はもう受け取った</button>
-    </div>
-    <div>
-      <p class="group-label" id="cap-label">累計受け取りの上限</p>
-      <div class="presets" id="cap-group" role="group" aria-labelledby="cap-label">
+      <label for="remain">残り受け取れるポイント
+        <input type="number" id="remain" inputmode="numeric" min="0" step="1" value="3200">
+      </label>
+      <div class="presets" id="cap-group" role="group" aria-label="残り受け取れるポイントをまとめて入力" style="margin-top:8px">
         <button type="button" data-cap="800">800</button>
         <button type="button" data-cap="1600">1600</button>
         <button type="button" data-cap="3200">3200</button>
       </div>
+    </div>
+    <div>
+      <p class="group-label" id="preset-label">受け取りパターン</p>
+      <div class="presets" id="preset-group" role="group" aria-labelledby="preset-label">
+        <button type="button" id="preset-a" data-a="820" data-b="600" data-f="0">820 / 600</button>
+        <button type="button" id="preset-b" data-a="820" data-b="600" data-f="300">820 / 600（初回300）</button>
+        <button type="button" id="preset-c" data-a="300" data-b="120" data-f="0">300 / 120</button>
+      </div>
+    </div>
+    <div class="presets" id="first-row" hidden>
+      <button type="button" id="usedFirst" aria-pressed="false">初回分はもう受け取った</button>
     </div>
     <div>
       <p class="group-label" id="unit-label">消化に使う単位（複数選べます）</p>
@@ -221,9 +220,6 @@ tr.last td { font-weight: 700; }
         <label for="units">消化の単位（手入力）
           <input type="text" id="units" inputmode="text" autocomplete="off" value="250, 400, 800">
         </label>
-        <label for="capTotal">累計上限（手入力）
-          <input type="number" id="capTotal" inputmode="numeric" min="0" step="1" value="3200">
-        </label>
         <label for="capHold">所持の上限
           <input type="number" id="capHold" inputmode="numeric" min="0" step="1" value="1500">
         </label>
@@ -245,6 +241,7 @@ tr.last td { font-weight: 700; }
 function solve(p) {
   var hasB = p.recvB > 0;
   var memo = new Map();
+  // c: points received from now on; receiving is allowed while c < p.remain.
   // f: 1 once the B slot has been used.
   // returns [bestFinalHold, totalReceivedAtEnd, stepsNeeded, action]
   // priority: bigger final hold, then bigger total received, then fewer steps
@@ -261,7 +258,7 @@ function solve(p) {
         best = [r[0], r[1], r[2] + 1, act];
       }
     }
-    if (h <= p.capHold && c <= p.capTotal) {
+    if (h <= p.capHold && c < p.remain) {
       consider(go(h + p.recvA, c + p.recvA, f), 1);
       if (hasB) { var b = bAmount(f); consider(go(h + b, c + b, 1), 2); }
     }
@@ -271,7 +268,7 @@ function solve(p) {
     memo.set(key, best);
     return best;
   }
-  var h = p.hold, c = p.got, f = p.usedFirst ? 1 : 0, steps = [];
+  var h = p.hold, c = 0, f = p.usedFirst ? 1 : 0, steps = [];
   var r = go(h, c, f);
   var final = r[0];
   while (r[3] !== 0) {
@@ -289,8 +286,8 @@ function solve(p) {
 }
 /*SOLVER-END*/
 
-var ids = ["hold", "recvA", "recvB", "firstB", "capTotal", "got", "capHold"];
-var KEY = "point-carry-v4";
+var ids = ["hold", "remain", "recvA", "recvB", "firstB", "capHold"];
+var KEY = "point-carry-v5";
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString("ja-JP"); }
 
@@ -323,7 +320,7 @@ function validate(p) {
   var minU = Math.min.apply(null, p.units);
   var minR = p.recvB > 0 ? Math.min(p.recvA, p.recvB) : p.recvA;
   if (p.recvB > 0 && p.firstB > 0) minR = Math.min(minR, p.firstB);
-  var depth = p.hold / minU + (p.capTotal + p.capHold) / minR + (p.capTotal + p.capHold) / minU;
+  var depth = p.hold / minU + (p.remain + p.capHold) / minR + (p.remain + p.capHold) / minU;
   if (depth > 3000) return "数値の差が大きすぎて計算できません。受け取り額や消化の単位を大きくするか、所持・上限を小さくしてください。";
   return "";
 }
@@ -334,7 +331,7 @@ function render() {
   var showFirst = p.recvB > 0 && p.firstB > 0;
   $("first-row").hidden = !showFirst;
   if (showFirst) $("usedFirst").textContent = "初回の" + p.firstB + "pはもう受け取った";
-  capBtns.forEach(function (b) { b.setAttribute("aria-pressed", p.capTotal === +b.dataset.cap ? "true" : "false"); });
+  capBtns.forEach(function (b) { b.setAttribute("aria-pressed", p.remain === +b.dataset.cap ? "true" : "false"); });
   var out = $("out");
   var err = validate(p);
   if (err) {
@@ -361,14 +358,14 @@ function render() {
   if (res.steps.length === 0) {
     html += '<p class="hint">これ以上受け取っても消化しても増えません。いまの所持が最大です。</p>';
   } else {
-    html += '<div class="table-wrap"><table><thead><tr><th>#</th><th>操作</th><th>所持</th><th>累計受取</th></tr></thead><tbody>';
-    html += '<tr><td></td><td>スタート</td><td>' + fmt(p.hold) + '</td><td>' + fmt(p.got) + '</td></tr>';
+    html += '<div class="table-wrap"><table><thead><tr><th>#</th><th>操作</th><th>所持</th><th>残り受取</th></tr></thead><tbody>';
+    html += '<tr><td></td><td>スタート</td><td>' + fmt(p.hold) + '</td><td>' + fmt(p.remain) + '</td></tr>';
     res.steps.forEach(function (s, i) {
       var last = i === res.steps.length - 1 ? ' class="last"' : "";
       var pill = s.type === "gain"
         ? '<span class="pill gain">受取 +' + fmt(s.amount) + '</span>' + (s.first ? '<span class="tag">初回</span>' : "")
         : '<span class="pill spend">消化 −' + fmt(s.amount) + '</span>';
-      html += "<tr" + last + "><td>" + (i + 1) + "</td><td>" + pill + "</td><td>" + fmt(s.hold) + "</td><td>" + fmt(s.total) + "</td></tr>";
+      html += "<tr" + last + "><td>" + (i + 1) + "</td><td>" + pill + "</td><td>" + fmt(s.hold) + "</td><td>" + fmt(Math.max(0, p.remain - s.total)) + "</td></tr>";
     });
     html += "</tbody></table></div>";
     html += '<p class="hint">同じ最大値になるやり方が複数あるときは、受け取り合計がいちばん多く、その中で操作回数が少ないものを1つ表示しています。</p>';
@@ -384,10 +381,10 @@ function render() {
   var rules = [
     "1回の受け取りは " + amt + "。"
   ].concat(firstRule, [
-    "累計受け取りが " + fmt(p.capTotal) + "p を超えたら、それ以降は受け取れない（超える最後の1回は受け取れる）。",
+    "残り受け取れるポイントは " + fmt(p.remain) + "p からスタート。残りが1p以上あれば受け取れて、最後の1回は残りを超えて受け取れる。残りが0になったら受け取れない。",
     "所持が " + fmt(p.capHold) + "p を超えている間は受け取れない（消化して " + fmt(p.capHold) + "p 以下に戻せば受け取れる）。",
     "消化は1回につき " + p.units.slice().reverse().map(fmt).join("p・") + "p のどれかで、いつでも何回でもできる。",
-    "累計受け取りは、すでに受け取った " + fmt(p.got) + "p から数える。スタート時の所持そのものは累計に数えない。"
+    "スタート時の所持は、残り受け取れるポイントとは別に数える。"
   ]);
   var ul = $("rules");
   ul.innerHTML = "";
@@ -402,7 +399,7 @@ $("usedFirst").addEventListener("click", function () {
 });
 var capBtns = Array.prototype.slice.call(document.querySelectorAll("#cap-group button"));
 capBtns.forEach(function (b) {
-  b.addEventListener("click", function () { $("capTotal").value = b.dataset.cap; render(); });
+  b.addEventListener("click", function () { $("remain").value = b.dataset.cap; render(); });
 });
 var unitBtns = Array.prototype.slice.call(document.querySelectorAll("#unit-group button"));
 function syncUnits() {
@@ -431,7 +428,7 @@ function syncPresets(p) {
 presetBtns.forEach(function (b) {
   b.addEventListener("click", function () {
     $("recvA").value = b.dataset.a; $("recvB").value = b.dataset.b;
-    $("firstB").value = b.dataset.f; $("capTotal").value = b.dataset.cap;
+    $("firstB").value = b.dataset.f;
     render();
   });
 });
