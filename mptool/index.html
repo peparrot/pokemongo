@@ -184,6 +184,14 @@ tr.last td { font-weight: 700; }
       </div>
     </div>
     <div>
+      <p class="group-label" id="cap-label">累計受け取りの上限</p>
+      <div class="presets" id="cap-group" role="group" aria-labelledby="cap-label">
+        <button type="button" data-cap="800">800</button>
+        <button type="button" data-cap="1600">1600</button>
+        <button type="button" data-cap="3200">3200</button>
+      </div>
+    </div>
+    <div>
       <p class="group-label" id="unit-label">消化に使う単位（複数選べます）</p>
       <div class="presets" id="unit-group" role="group" aria-labelledby="unit-label">
         <button type="button" data-u="250" aria-pressed="true">250</button>
@@ -206,7 +214,7 @@ tr.last td { font-weight: 700; }
         <label for="units">消化の単位（手入力）
           <input type="text" id="units" inputmode="text" autocomplete="off" value="250, 400, 800">
         </label>
-        <label for="capTotal">累計受け取りの上限
+        <label for="capTotal">累計上限（手入力）
           <input type="number" id="capTotal" inputmode="numeric" min="0" step="1" value="3200">
         </label>
         <label for="got">すでに受け取った累計
@@ -318,6 +326,7 @@ function validate(p) {
 function render() {
   var p = read();
   syncUnits();
+  capBtns.forEach(function (b) { b.setAttribute("aria-pressed", p.capTotal === +b.dataset.cap ? "true" : "false"); });
   var out = $("out");
   var err = validate(p);
   if (err) {
@@ -376,6 +385,10 @@ function render() {
 }
 
 var presetBtns = Array.prototype.slice.call(document.querySelectorAll("#preset-group button"));
+var capBtns = Array.prototype.slice.call(document.querySelectorAll("#cap-group button"));
+capBtns.forEach(function (b) {
+  b.addEventListener("click", function () { $("capTotal").value = b.dataset.cap; render(); });
+});
 var unitBtns = Array.prototype.slice.call(document.querySelectorAll("#unit-group button"));
 function syncUnits() {
   var cur = read().units;
@@ -396,7 +409,7 @@ unitBtns.forEach(function (b) {
 });
 function syncPresets(p) {
   presetBtns.forEach(function (b) {
-    var on = p.recvA === +b.dataset.a && p.recvB === +b.dataset.b && p.firstB === +b.dataset.f && p.capTotal === +b.dataset.cap;
+    var on = p.recvA === +b.dataset.a && p.recvB === +b.dataset.b && p.firstB === +b.dataset.f;
     b.setAttribute("aria-pressed", on ? "true" : "false");
   });
 }
