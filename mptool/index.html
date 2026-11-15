@@ -95,7 +95,7 @@ h2 {
   gap: 14px;
 }
 label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); font-weight: 500; }
-input[type="number"] {
+input[type="number"], input[type="text"] {
   font: inherit;
   font-size: 1.05rem;
   font-variant-numeric: tabular-nums;
@@ -194,8 +194,8 @@ tr.last td { font-weight: 700; }
         <label for="firstB">Bの初回だけの額
           <input type="number" id="firstB" inputmode="numeric" min="0" step="1" value="0">
         </label>
-        <label for="unit">消化の単位
-          <input type="number" id="unit" inputmode="numeric" min="1" step="1" value="800">
+        <label for="units">消化できる単位
+          <input type="text" id="units" inputmode="text" autocomplete="off" value="250, 400, 800">
         </label>
         <label for="capTotal">累計受け取りの上限
           <input type="number" id="capTotal" inputmode="numeric" min="0" step="1" value="3200">
@@ -207,7 +207,7 @@ tr.last td { font-weight: 700; }
           <input type="number" id="capHold" inputmode="numeric" min="0" step="1" value="1500">
         </label>
       </div>
-      <p class="hint" style="margin-top:10px">受け取り額が1種類だけなら、Bを0に。「Bの初回だけの額」は、Bの1回目だけ額が変わるとき用です（変わらないなら0）。</p>
+      <p class="hint" style="margin-top:10px">受け取り額が1種類だけなら、Bを0に。「Bの初回だけの額」は、Bの1回目だけ額が変わるとき用です（変わらないなら0）。消化できる単位は「250, 400, 800」のようにカンマで区切って複数入れられます。</p>
     </details>
   </section>
 
@@ -224,34 +224,41 @@ tr.last td { font-weight: 700; }
 function solve(p) {
   var hasB = p.recvB > 0;
   var memo = new Map();
-  // f: 1 once the B slot has been used. returns [bestFinalHold, stepsNeeded, action]
-  // action: 0 = stop, -1 = consume, 1 = receive A, 2 = receive B
+  // f: 1 once the B slot has been used.
+  // returns [bestFinalHold, totalReceivedAtEnd, stepsNeeded, action]
+  // priority: bigger final hold, then bigger total received, then fewer steps
+  // action: 0 = stop, negative = consume that amount, 1 = receive A, 2 = receive B
   function bAmount(f) { return (!f && p.firstB > 0) ? p.firstB : p.recvB; }
   function go(h, c, f) {
     var key = h + "," + c + "," + f;
     var hit = memo.get(key);
     if (hit) return hit;
-    var best = [h, 0, 0];
+    var best = [h, c, 0, 0];
     function consider(r, act) {
-      if (r[0] > best[0] || (r[0] === best[0] && r[1] + 1 < best[1])) best = [r[0], r[1] + 1, act];
+      if (r[0] > best[0] ||
+          (r[0] === best[0] && (r[1] > best[1] || (r[1] === best[1] && r[2] + 1 < best[2])))) {
+        best = [r[0], r[1], r[2] + 1, act];
+      }
     }
     if (h <= p.capHold && c <= p.capTotal) {
       consider(go(h + p.recvA, c + p.recvA, f), 1);
       if (hasB) { var b = bAmount(f); consider(go(h + b, c + b, 1), 2); }
     }
-    if (h >= p.unit) consider(go(h - p.unit, c, f), -1);
+    for (var i = 0; i < p.units.length; i++) {
+      if (h >= p.units[i]) consider(go(h - p.units[i], c, f), -p.units[i]);
+    }
     memo.set(key, best);
     return best;
   }
   var h = p.hold, c = p.got, f = 0, steps = [];
   var r = go(h, c, f);
   var final = r[0];
-  while (r[2] !== 0) {
-    if (r[2] === -1) { h -= p.unit; steps.push({ type: "spend", amount: p.unit, hold: h, total: c }); }
+  while (r[3] !== 0) {
+    if (r[3] < 0) { h += r[3]; steps.push({ type: "spend", amount: -r[3], hold: h, total: c }); }
     else {
-      var amt = r[2] === 1 ? p.recvA : bAmount(f);
-      var first = r[2] === 2 && !f && p.firstB > 0;
-      if (r[2] === 2) f = 1;
+      var amt = r[3] === 1 ? p.recvA : bAmount(f);
+      var first = r[3] === 2 && !f && p.firstB > 0;
+      if (r[3] === 2) f = 1;
       h += amt; c += amt;
       steps.push({ type: "gain", amount: amt, hold: h, total: c, first: first });
     }
@@ -261,8 +268,8 @@ function solve(p) {
 }
 /*SOLVER-END*/
 
-var ids = ["hold", "recvA", "recvB", "firstB", "capTotal", "got", "capHold", "unit"];
-var KEY = "point-carry-v2";
+var ids = ["hold", "recvA", "recvB", "firstB", "capTotal", "got", "capHold"];
+var KEY = "point-carry-v3";
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString("ja-JP"); }
 
@@ -272,6 +279,10 @@ function read() {
     var v = $(ids[i]).value.trim();
     p[ids[i]] = v === "" ? NaN : Number(v);
   }
+  var seen = {};
+  p.units = $("units").value.split(/[\s,、，]+/).filter(function (t) { return t !== ""; }).map(Number)
+    .filter(function (n) { if (seen[n]) return false; seen[n] = 1; return true; })
+    .sort(function (a, b) { return b - a; });
   return p;
 }
 
@@ -281,10 +292,16 @@ function validate(p) {
     if (!isFinite(v) || v < 0 || Math.floor(v) !== v) return "すべての欄に0以上の整数を入れてください。";
   }
   if (p.recvA < 1) return "受け取り額 A は1以上にしてください。";
-  if (p.unit < 1) return "消化の単位は1以上にしてください。";
+  if (p.units.length === 0) return "消化できる単位を1つ以上入れてください（例：250, 400, 800）。";
+  if (p.units.length > 6) return "消化できる単位は6つまでにしてください。";
+  for (var j = 0; j < p.units.length; j++) {
+    var u = p.units[j];
+    if (!isFinite(u) || u < 1 || Math.floor(u) !== u) return "消化できる単位は1以上の整数を、カンマで区切って入れてください（例：250, 400, 800）。";
+  }
+  var minU = Math.min.apply(null, p.units);
   var minR = p.recvB > 0 ? Math.min(p.recvA, p.recvB) : p.recvA;
   if (p.recvB > 0 && p.firstB > 0) minR = Math.min(minR, p.firstB);
-  var depth = p.hold / p.unit + (p.capTotal + p.capHold) / minR + (p.capTotal + p.capHold) / p.unit;
+  var depth = p.hold / minU + (p.capTotal + p.capHold) / minR + (p.capTotal + p.capHold) / minU;
   if (depth > 3000) return "数値の差が大きすぎて計算できません。受け取り額や消化の単位を大きくするか、所持・上限を小さくしてください。";
   return "";
 }
@@ -304,13 +321,14 @@ function render() {
   var res = solve(p);
   var gains = res.steps.filter(function (s) { return s.type === "gain"; });
   var spends = res.steps.length - gains.length;
+  var spendSum = res.steps.reduce(function (a, s) { return a + (s.type === "spend" ? s.amount : 0); }, 0);
   var gainSum = gains.reduce(function (a, s) { return a + s.amount; }, 0);
 
   var html = '<div style="display:flex;flex-direction:column;gap:16px">';
   html += '<section class="result" aria-live="polite"><span class="cap">持ち越せる最大</span>' +
     '<span class="big">' + fmt(res.final) + '<small>p</small></span>' +
     '<span class="sub"><span>受け取り ' + gains.length + '回（+' + fmt(gainSum) + 'p）</span>' +
-    '<span>消化 ' + spends + '回（−' + fmt(spends * p.unit) + 'p）</span></span></section>';
+    '<span>消化 ' + spends + '回（−' + fmt(spendSum) + 'p）</span></span></section>';
 
   html += '<section class="card"><h2>手順</h2>';
   if (res.steps.length === 0) {
@@ -326,7 +344,7 @@ function render() {
       html += "<tr" + last + "><td>" + (i + 1) + "</td><td>" + pill + "</td><td>" + fmt(s.hold) + "</td><td>" + fmt(s.total) + "</td></tr>";
     });
     html += "</tbody></table></div>";
-    html += '<p class="hint">同じ最大値になる順番がほかにもある場合は、操作回数が少ないものを1つ表示しています。</p>';
+    html += '<p class="hint">同じ最大値になるやり方が複数あるときは、受け取り合計がいちばん多く、その中で操作回数が少ないものを1つ表示しています。</p>';
   }
   html += "</section></div>";
   out.innerHTML = html;
@@ -339,7 +357,7 @@ function render() {
   ].concat(firstRule, [
     "累計受け取りが " + fmt(p.capTotal) + "p を超えたら、それ以降は受け取れない（超える最後の1回は受け取れる）。",
     "所持が " + fmt(p.capHold) + "p を超えている間は受け取れない（消化して " + fmt(p.capHold) + "p 以下に戻せば受け取れる）。",
-    "消化は " + fmt(p.unit) + "p 単位で、いつでも何回でもできる。",
+    "消化は1回につき " + p.units.slice().reverse().map(fmt).join("p・") + "p のどれかで、いつでも何回でもできる。",
     "スタート時の所持は累計受け取りに数えない。"
   ]);
   var ul = $("rules");
@@ -363,9 +381,12 @@ presetBtns.forEach(function (b) {
 });
 try {
   var saved = JSON.parse(localStorage.getItem(KEY) || "null");
-  if (saved) ids.forEach(function (id) { if (typeof saved[id] === "number" && isFinite(saved[id])) $(id).value = saved[id]; });
+  if (saved) {
+    ids.forEach(function (id) { if (typeof saved[id] === "number" && isFinite(saved[id])) $(id).value = saved[id]; });
+    if (Array.isArray(saved.units) && saved.units.length) $("units").value = saved.units.slice().reverse().join(", ");
+  }
 } catch (e) {}
-ids.forEach(function (id) { $(id).addEventListener("input", render); });
+ids.concat(["units"]).forEach(function (id) { $(id).addEventListener("input", render); });
 render();
 </script>
 </body>
