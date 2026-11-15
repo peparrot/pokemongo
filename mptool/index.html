@@ -176,10 +176,18 @@ tr.last td { font-weight: 700; }
     </label>
     <div>
       <p class="group-label" id="preset-label">受け取りパターン</p>
-      <div class="presets" role="group" aria-labelledby="preset-label">
+      <div class="presets" id="preset-group" role="group" aria-labelledby="preset-label">
         <button type="button" id="preset-a" data-a="820" data-b="600" data-f="0" data-cap="3200">820 / 600</button>
         <button type="button" id="preset-b" data-a="820" data-b="600" data-f="300" data-cap="3200">820 / 600（初回300）</button>
         <button type="button" id="preset-c" data-a="300" data-b="120" data-f="0" data-cap="1600">300 / 120</button>
+      </div>
+    </div>
+    <div>
+      <p class="group-label" id="unit-label">消化に使う単位（複数選べます）</p>
+      <div class="presets" id="unit-group" role="group" aria-labelledby="unit-label">
+        <button type="button" data-u="250" aria-pressed="true">250</button>
+        <button type="button" data-u="400" aria-pressed="true">400</button>
+        <button type="button" data-u="800" aria-pressed="true">800</button>
       </div>
     </div>
     <details id="settings">
@@ -194,7 +202,7 @@ tr.last td { font-weight: 700; }
         <label for="firstB">Bの初回だけの額
           <input type="number" id="firstB" inputmode="numeric" min="0" step="1" value="0">
         </label>
-        <label for="units">消化できる単位
+        <label for="units">消化の単位（手入力）
           <input type="text" id="units" inputmode="text" autocomplete="off" value="250, 400, 800">
         </label>
         <label for="capTotal">累計受け取りの上限
@@ -207,7 +215,7 @@ tr.last td { font-weight: 700; }
           <input type="number" id="capHold" inputmode="numeric" min="0" step="1" value="1500">
         </label>
       </div>
-      <p class="hint" style="margin-top:10px">受け取り額が1種類だけなら、Bを0に。「Bの初回だけの額」は、Bの1回目だけ額が変わるとき用です（変わらないなら0）。消化できる単位は「250, 400, 800」のようにカンマで区切って複数入れられます。</p>
+      <p class="hint" style="margin-top:10px">受け取り額が1種類だけなら、Bを0に。「Bの初回だけの額」は、Bの1回目だけ額が変わるとき用です（変わらないなら0）。250・400・800以外の単位で消化するときは、「消化の単位（手入力）」に「100, 250」のようにカンマ区切りで入れてください。</p>
     </details>
   </section>
 
@@ -292,7 +300,7 @@ function validate(p) {
     if (!isFinite(v) || v < 0 || Math.floor(v) !== v) return "すべての欄に0以上の整数を入れてください。";
   }
   if (p.recvA < 1) return "受け取り額 A は1以上にしてください。";
-  if (p.units.length === 0) return "消化できる単位を1つ以上入れてください（例：250, 400, 800）。";
+  if (p.units.length === 0) return "消化に使う単位を1つ以上選んでください。";
   if (p.units.length > 6) return "消化できる単位は6つまでにしてください。";
   for (var j = 0; j < p.units.length; j++) {
     var u = p.units[j];
@@ -308,6 +316,7 @@ function validate(p) {
 
 function render() {
   var p = read();
+  syncUnits();
   var out = $("out");
   var err = validate(p);
   if (err) {
@@ -365,7 +374,25 @@ function render() {
   rules.forEach(function (t) { var li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
 }
 
-var presetBtns = Array.prototype.slice.call(document.querySelectorAll(".presets button"));
+var presetBtns = Array.prototype.slice.call(document.querySelectorAll("#preset-group button"));
+var unitBtns = Array.prototype.slice.call(document.querySelectorAll("#unit-group button"));
+function syncUnits() {
+  var cur = read().units;
+  unitBtns.forEach(function (b) {
+    b.setAttribute("aria-pressed", cur.indexOf(+b.dataset.u) >= 0 ? "true" : "false");
+  });
+}
+unitBtns.forEach(function (b) {
+  b.addEventListener("click", function () {
+    var u = +b.dataset.u;
+    var cur = read().units.filter(function (n) { return isFinite(n); });
+    var i = cur.indexOf(u);
+    if (i >= 0) cur.splice(i, 1); else cur.push(u);
+    cur.sort(function (a, c) { return a - c; });
+    $("units").value = cur.join(", ");
+    render();
+  });
+});
 function syncPresets(p) {
   presetBtns.forEach(function (b) {
     var on = p.recvA === +b.dataset.a && p.recvB === +b.dataset.b && p.firstB === +b.dataset.f && p.capTotal === +b.dataset.cap;
