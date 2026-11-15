@@ -118,6 +118,7 @@ input:focus-visible, button:focus-visible, summary:focus-visible {
   color: var(--ink); background: var(--bg); border: 1px solid var(--line);
   border-radius: 999px; padding: 8px 14px; cursor: pointer;
 }
+[hidden] { display: none !important; }
 .presets button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .group-label { font-size: .85rem; color: var(--muted); font-weight: 500; margin: 0 0 6px; }
 .tag { font-size: .72rem; font-weight: 700; color: var(--muted); margin-left: 6px; }
@@ -175,6 +176,9 @@ tr.last td { font-weight: 700; }
     <label class="main-input" for="hold">いまの所持ポイント
       <input type="number" id="hold" inputmode="numeric" min="0" step="1" value="1730">
     </label>
+    <label for="got">すでに受け取った累計（まだなら0）
+      <input type="number" id="got" inputmode="numeric" min="0" step="1" value="0">
+    </label>
     <div>
       <p class="group-label" id="preset-label">受け取りパターン</p>
       <div class="presets" id="preset-group" role="group" aria-labelledby="preset-label">
@@ -182,6 +186,9 @@ tr.last td { font-weight: 700; }
         <button type="button" id="preset-b" data-a="820" data-b="600" data-f="300" data-cap="3200">820 / 600（初回300）</button>
         <button type="button" id="preset-c" data-a="300" data-b="120" data-f="0" data-cap="1600">300 / 120</button>
       </div>
+    </div>
+    <div class="presets" id="first-row" hidden>
+      <button type="button" id="usedFirst" aria-pressed="false">初回分はもう受け取った</button>
     </div>
     <div>
       <p class="group-label" id="cap-label">累計受け取りの上限</p>
@@ -216,9 +223,6 @@ tr.last td { font-weight: 700; }
         </label>
         <label for="capTotal">累計上限（手入力）
           <input type="number" id="capTotal" inputmode="numeric" min="0" step="1" value="3200">
-        </label>
-        <label for="got">すでに受け取った累計
-          <input type="number" id="got" inputmode="numeric" min="0" step="1" value="0">
         </label>
         <label for="capHold">所持の上限
           <input type="number" id="capHold" inputmode="numeric" min="0" step="1" value="1500">
@@ -267,7 +271,7 @@ function solve(p) {
     memo.set(key, best);
     return best;
   }
-  var h = p.hold, c = p.got, f = 0, steps = [];
+  var h = p.hold, c = p.got, f = p.usedFirst ? 1 : 0, steps = [];
   var r = go(h, c, f);
   var final = r[0];
   while (r[3] !== 0) {
@@ -286,7 +290,7 @@ function solve(p) {
 /*SOLVER-END*/
 
 var ids = ["hold", "recvA", "recvB", "firstB", "capTotal", "got", "capHold"];
-var KEY = "point-carry-v3";
+var KEY = "point-carry-v4";
 function $(id) { return document.getElementById(id); }
 function fmt(n) { return n.toLocaleString("ja-JP"); }
 
@@ -296,6 +300,7 @@ function read() {
     var v = $(ids[i]).value.trim();
     p[ids[i]] = v === "" ? NaN : Number(v);
   }
+  p.usedFirst = $("usedFirst").getAttribute("aria-pressed") === "true";
   var seen = {};
   p.units = $("units").value.split(/[\s,、，]+/).filter(function (t) { return t !== ""; }).map(Number)
     .filter(function (n) { if (seen[n]) return false; seen[n] = 1; return true; })
@@ -326,6 +331,9 @@ function validate(p) {
 function render() {
   var p = read();
   syncUnits();
+  var showFirst = p.recvB > 0 && p.firstB > 0;
+  $("first-row").hidden = !showFirst;
+  if (showFirst) $("usedFirst").textContent = "初回の" + p.firstB + "pはもう受け取った";
   capBtns.forEach(function (b) { b.setAttribute("aria-pressed", p.capTotal === +b.dataset.cap ? "true" : "false"); });
   var out = $("out");
   var err = validate(p);
@@ -369,7 +377,9 @@ function render() {
   out.innerHTML = html;
 
   var amt = p.recvB > 0 && p.recvB !== p.recvA ? fmt(p.recvA) + "p か " + fmt(p.recvB) + "p" : fmt(p.recvA) + "p";
-  var firstRule = p.recvB > 0 && p.firstB > 0 ? [fmt(p.recvB) + "p のほうは、1回目だけ " + fmt(p.firstB) + "p になる（2回目からは " + fmt(p.recvB) + "p）。"] : [];
+  var firstRule = p.recvB > 0 && p.firstB > 0 ? [p.usedFirst
+    ? "初回の " + fmt(p.firstB) + "p は受け取り済みなので、" + fmt(p.recvB) + "p で計算する。"
+    : fmt(p.recvB) + "p のほうは、1回目だけ " + fmt(p.firstB) + "p になる（2回目からは " + fmt(p.recvB) + "p）。"] : [];
   syncPresets(p);
   var rules = [
     "1回の受け取りは " + amt + "。"
@@ -377,7 +387,7 @@ function render() {
     "累計受け取りが " + fmt(p.capTotal) + "p を超えたら、それ以降は受け取れない（超える最後の1回は受け取れる）。",
     "所持が " + fmt(p.capHold) + "p を超えている間は受け取れない（消化して " + fmt(p.capHold) + "p 以下に戻せば受け取れる）。",
     "消化は1回につき " + p.units.slice().reverse().map(fmt).join("p・") + "p のどれかで、いつでも何回でもできる。",
-    "スタート時の所持は累計受け取りに数えない。"
+    "累計受け取りは、すでに受け取った " + fmt(p.got) + "p から数える。スタート時の所持そのものは累計に数えない。"
   ]);
   var ul = $("rules");
   ul.innerHTML = "";
@@ -385,6 +395,11 @@ function render() {
 }
 
 var presetBtns = Array.prototype.slice.call(document.querySelectorAll("#preset-group button"));
+$("usedFirst").addEventListener("click", function () {
+  var b = $("usedFirst");
+  b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
+  render();
+});
 var capBtns = Array.prototype.slice.call(document.querySelectorAll("#cap-group button"));
 capBtns.forEach(function (b) {
   b.addEventListener("click", function () { $("capTotal").value = b.dataset.cap; render(); });
@@ -424,6 +439,7 @@ try {
   var saved = JSON.parse(localStorage.getItem(KEY) || "null");
   if (saved) {
     ids.forEach(function (id) { if (typeof saved[id] === "number" && isFinite(saved[id])) $(id).value = saved[id]; });
+    if (saved.usedFirst === true) $("usedFirst").setAttribute("aria-pressed", "true");
     if (Array.isArray(saved.units) && saved.units.length) $("units").value = saved.units.slice().reverse().join(", ");
   }
 } catch (e) {}
