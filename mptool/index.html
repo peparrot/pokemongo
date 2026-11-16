@@ -199,6 +199,13 @@ tr.last td { font-weight: 700; }
       </div>
     </div>
     <div>
+      <p class="group-label" id="mode-label">何を最大にする？</p>
+      <div class="presets" id="mode-group" role="group" aria-labelledby="mode-label">
+        <button type="button" data-mode="carry" aria-pressed="true">持ち越し</button>
+        <button type="button" data-mode="gain" aria-pressed="false">受け取り合計</button>
+      </div>
+    </div>
+    <div>
       <p class="group-label" id="preset-label">受け取りパターン</p>
       <div class="presets" id="preset-group" role="group" aria-labelledby="preset-label">
         <button type="button" id="preset-a" data-a="820" data-b="600" data-f="0">820 / 600</button>
@@ -256,13 +263,15 @@ tr.last td { font-weight: 700; }
 /*SOLVER-START*/
 function solve(p) {
   var hasB = p.recvB > 0;
+  var gainMode = p.mode === "gain";
   var memo = new Map();
   var req0 = p.units.map(function (u, i) { return (p.req && p.req[i]) || 0; });
   // c: points received from now on; receiving is allowed while c < p.remain.
   // f: 1 once the B slot has been used.
   // rem: how many more times each unit still has to be consumed (same order as p.units).
   // returns [bestFinalHold, totalReceivedAtEnd, stepsNeeded, action]; bestFinalHold is -Infinity when rem cannot be met
-  // priority: bigger final hold, then bigger total received, then fewer steps
+  // priority (carry mode): bigger final hold, then bigger total received, then fewer steps
+  // priority (gain mode): bigger total received, then bigger final hold, then fewer steps
   // action: 0 = stop, negative = consume unit index (-(i+1)), 1 = receive A, 2 = receive B
   function bAmount(f) { return (!f && p.firstB > 0) ? p.firstB : p.recvB; }
   function go(h, c, f, rem) {
@@ -273,8 +282,9 @@ function solve(p) {
     var best = done ? [h, c, 0, 0] : [-Infinity, c, 0, 0];
     function consider(r, act) {
       if (r[0] === -Infinity) return;
-      if (r[0] > best[0] ||
-          (r[0] === best[0] && (r[1] > best[1] || (r[1] === best[1] && r[2] + 1 < best[2])))) {
+      var x = gainMode ? 1 : 0, y = gainMode ? 0 : 1;
+      if (best[0] === -Infinity || r[x] > best[x] ||
+          (r[x] === best[x] && (r[y] > best[y] || (r[y] === best[y] && r[2] + 1 < best[2])))) {
         best = [r[0], r[1], r[2] + 1, act];
       }
     }
@@ -316,6 +326,7 @@ function solve(p) {
 }
 /*SOLVER-END*/
 
+var mode = "carry";
 var reqMap = {};
 var REQ_MAX = 9;
 function renderReq(p) {
@@ -359,6 +370,7 @@ function read() {
   }
   p.usedFirst = $("usedFirst").getAttribute("aria-pressed") === "true";
   p.reqMap = reqMap;
+  p.mode = mode;
   var seen = {};
   p.units = $("units").value.split(/[\s,、，]+/).filter(function (t) { return t !== ""; }).map(Number)
     .filter(function (n) { if (seen[n]) return false; seen[n] = 1; return true; })
@@ -391,6 +403,7 @@ function validate(p) {
 function render() {
   var p = read();
   syncUnits();
+  modeBtns.forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.mode === mode ? "true" : "false"); });
   renderReq(p);
   var showFirst = p.recvB > 0 && p.firstB > 0;
   $("first-row").hidden = !showFirst;
@@ -418,14 +431,17 @@ function render() {
   var gainSum = gains.reduce(function (a, s) { return a + s.amount; }, 0);
 
   var html = '<div style="display:flex;flex-direction:column;gap:16px">';
-  html += '<section class="result" aria-live="polite"><span class="cap">持ち越せる最大</span>' +
-    '<span class="big">' + fmt(res.final) + '<small>p</small></span>' +
-    '<span class="sub"><span>受け取り ' + gains.length + '回（+' + fmt(gainSum) + 'p）</span>' +
+  var gainMode = p.mode === "gain";
+  html += '<section class="result" aria-live="polite"><span class="cap">' + (gainMode ? "受け取れる合計の最大" : "持ち越せる最大") + '</span>' +
+    '<span class="big">' + fmt(gainMode ? gainSum : res.final) + '<small>p</small></span>' +
+    '<span class="sub">' + (gainMode
+      ? '<span>最後の所持 ' + fmt(res.final) + 'p</span><span>受け取り ' + gains.length + '回</span>'
+      : '<span>受け取り ' + gains.length + '回（+' + fmt(gainSum) + 'p）</span>') +
     '<span>消化 ' + spends + '回（−' + fmt(spendSum) + 'p）</span></span></section>';
 
   html += '<section class="card"><h2>手順</h2>';
   if (res.steps.length === 0) {
-    html += '<p class="hint">これ以上受け取っても消化しても増えません。いまの所持が最大です。</p>';
+    html += '<p class="hint">' + (gainMode ? 'これ以上は受け取れません。' : 'これ以上受け取っても消化しても増えません。いまの所持が最大です。') + '</p>';
   } else {
     html += '<div class="table-wrap"><table><thead><tr><th>#</th><th>操作</th><th>所持</th><th>残り受取</th></tr></thead><tbody>';
     html += '<tr><td></td><td>スタート</td><td>' + fmt(p.hold) + '</td><td>' + fmt(p.remain) + '</td></tr>';
@@ -437,7 +453,7 @@ function render() {
       html += "<tr" + last + "><td>" + (i + 1) + "</td><td>" + pill + "</td><td>" + fmt(s.hold) + "</td><td>" + fmt(Math.max(0, p.remain - s.total)) + "</td></tr>";
     });
     html += "</tbody></table></div>";
-    html += '<p class="hint">同じ最大値になるやり方が複数あるときは、受け取り合計がいちばん多く、その中で操作回数が少ないものを1つ表示しています。</p>';
+    html += '<p class="hint">' + (gainMode ? '同じ受け取り合計になるやり方が複数あるときは、最後の所持がいちばん多く、その中で操作回数が少ないものを1つ表示しています。' : '同じ最大値になるやり方が複数あるときは、受け取り合計がいちばん多く、その中で操作回数が少ないものを1つ表示しています。') + '</p>';
   }
   html += "</section></div>";
   out.innerHTML = html;
@@ -449,6 +465,7 @@ function render() {
   syncPresets(p);
   var reqSum = p.req.reduce(function (a, n) { return a + n; }, 0);
   var rules = [
+    gainMode ? "受け取り合計がいちばん多くなる手順を出す（同じなら最後の所持が多いほう）。" : "最後の所持（持ち越し）がいちばん多くなる手順を出す（同じなら受け取り合計が多いほう）。",
     "1回の受け取りは " + amt + "。"
   ].concat(firstRule, [
     "残り受け取れるポイントは " + fmt(p.remain) + "p からスタート。残りが1p以上あれば受け取れて、最後の1回は残りを超えて受け取れる。残りが0になったら受け取れない。",
@@ -463,6 +480,10 @@ function render() {
 }
 
 var presetBtns = Array.prototype.slice.call(document.querySelectorAll("#preset-group button"));
+var modeBtns = Array.prototype.slice.call(document.querySelectorAll("#mode-group button"));
+modeBtns.forEach(function (b) {
+  b.addEventListener("click", function () { mode = b.dataset.mode; render(); });
+});
 $("usedFirst").addEventListener("click", function () {
   var b = $("usedFirst");
   b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
@@ -513,6 +534,7 @@ try {
         if (typeof n === "number" && n >= 0 && n <= REQ_MAX && Math.floor(n) === n) reqMap[k] = n;
       });
     }
+    if (saved.mode === "gain") mode = "gain";
     if (saved.usedFirst === true) $("usedFirst").setAttribute("aria-pressed", "true");
     if (Array.isArray(saved.units) && saved.units.length) $("units").value = saved.units.slice().reverse().join(", ");
   }
