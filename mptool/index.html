@@ -206,11 +206,20 @@ tr.last td { font-weight: 700; }
       </div>
     </div>
     <div>
-      <p class="group-label" id="preset-label">受け取りパターン</p>
-      <div class="presets" id="preset-group" role="group" aria-labelledby="preset-label">
-        <button type="button" id="preset-a" data-a="820" data-b="600" data-f="0">820 / 600</button>
-        <button type="button" id="preset-b" data-a="820" data-b="600" data-f="300">820 / 600（初回300）</button>
-        <button type="button" id="preset-c" data-a="300" data-b="120" data-f="0">300 / 120</button>
+      <p class="group-label" id="recvA-label">受け取り①</p>
+      <div class="presets" id="recvA-group" role="group" aria-labelledby="recvA-label">
+        <button type="button" data-a="960">960</button>
+        <button type="button" data-a="820">820</button>
+        <button type="button" data-a="120">120</button>
+      </div>
+    </div>
+    <div>
+      <p class="group-label" id="recvB-label">受け取り②</p>
+      <div class="presets" id="recvB-group" role="group" aria-labelledby="recvB-label">
+        <button type="button" data-b="600" data-f="0">600</button>
+        <button type="button" data-b="600" data-f="300">600（初回のみ300）</button>
+        <button type="button" data-b="300" data-f="600">300（初回のみ600）</button>
+        <button type="button" data-b="300" data-f="0">300</button>
       </div>
     </div>
     <div class="presets" id="first-row" hidden>
@@ -231,13 +240,13 @@ tr.last td { font-weight: 700; }
     <details id="settings">
       <summary>ルール設定を変える</summary>
       <div class="grid">
-        <label for="recvA">受け取り額 A
+        <label for="recvA">受け取り① の額
           <input type="number" id="recvA" inputmode="numeric" min="1" step="1" value="820">
         </label>
-        <label for="recvB">受け取り額 B
+        <label for="recvB">受け取り② の額
           <input type="number" id="recvB" inputmode="numeric" min="0" step="1" value="600">
         </label>
-        <label for="firstB">Bの初回だけの額
+        <label for="firstB">受け取り② の初回だけの額
           <input type="number" id="firstB" inputmode="numeric" min="0" step="1" value="0">
         </label>
         <label for="units">消化の単位（手入力）
@@ -247,7 +256,7 @@ tr.last td { font-weight: 700; }
           <input type="number" id="capHold" inputmode="numeric" min="0" step="1" value="1500">
         </label>
       </div>
-      <p class="hint" style="margin-top:10px">受け取り額が1種類だけなら、Bを0に。「Bの初回だけの額」は、Bの1回目だけ額が変わるとき用です（変わらないなら0）。250・400・800以外の単位で消化するときは、「消化の単位（手入力）」に「100, 250」のようにカンマ区切りで入れてください。</p>
+      <p class="hint" style="margin-top:10px">上のボタンにない額は、ここで直接入れられます。受け取りが1種類だけなら②を0に。「②の初回だけの額」は、②の1回目だけ額が変わるとき用です（変わらないなら0）。250・400・800以外の単位で消化するときは、「消化の単位（手入力）」に「100, 250」のようにカンマ区切りで入れてください。</p>
     </details>
   </section>
 
@@ -384,7 +393,7 @@ function validate(p) {
     var v = p[ids[i]];
     if (!isFinite(v) || v < 0 || Math.floor(v) !== v) return "すべての欄に0以上の整数を入れてください。";
   }
-  if (p.recvA < 1) return "受け取り額 A は1以上にしてください。";
+  if (p.recvA < 1) return "受け取り① の額は1以上にしてください。";
   if (p.units.length === 0) return "消化に使う単位を1つ以上選んでください。";
   if (p.units.length > 6) return "消化できる単位は6つまでにしてください。";
   for (var j = 0; j < p.units.length; j++) {
@@ -479,7 +488,8 @@ function render() {
   rules.forEach(function (t) { var li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
 }
 
-var presetBtns = Array.prototype.slice.call(document.querySelectorAll("#preset-group button"));
+var recvABtns = Array.prototype.slice.call(document.querySelectorAll("#recvA-group button"));
+var recvBBtns = Array.prototype.slice.call(document.querySelectorAll("#recvB-group button"));
 var modeBtns = Array.prototype.slice.call(document.querySelectorAll("#mode-group button"));
 modeBtns.forEach(function (b) {
   b.addEventListener("click", function () { mode = b.dataset.mode; render(); });
@@ -512,15 +522,22 @@ unitBtns.forEach(function (b) {
   });
 });
 function syncPresets(p) {
-  presetBtns.forEach(function (b) {
-    var on = p.recvA === +b.dataset.a && p.recvB === +b.dataset.b && p.firstB === +b.dataset.f;
+  recvABtns.forEach(function (b) {
+    b.setAttribute("aria-pressed", p.recvA === +b.dataset.a ? "true" : "false");
+  });
+  recvBBtns.forEach(function (b) {
+    var on = p.recvB === +b.dataset.b && p.firstB === +b.dataset.f;
     b.setAttribute("aria-pressed", on ? "true" : "false");
   });
 }
-presetBtns.forEach(function (b) {
+recvABtns.forEach(function (b) {
+  b.addEventListener("click", function () { $("recvA").value = b.dataset.a; render(); });
+});
+recvBBtns.forEach(function (b) {
   b.addEventListener("click", function () {
-    $("recvA").value = b.dataset.a; $("recvB").value = b.dataset.b;
-    $("firstB").value = b.dataset.f;
+    var changed = $("recvB").value !== b.dataset.b || $("firstB").value !== b.dataset.f;
+    $("recvB").value = b.dataset.b; $("firstB").value = b.dataset.f;
+    if (changed) $("usedFirst").setAttribute("aria-pressed", "false");
     render();
   });
 });
